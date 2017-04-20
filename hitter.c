@@ -7,14 +7,20 @@
 
 #define MAX_BUFSIZE 10240
 
-char *main_key = NULL, *sub_key = NULL;
+char *main_key = NULL;
 
-typedef struct key2 {
+typedef struct key {
     char* key;
     UT_hash_handle hh;
 } KEY;
 
-typedef struct item2 {
+typedef struct subkey_counter {
+    char* key;
+    unsigned long count;
+    UT_hash_handle hh;
+} SUBKEYCOUNTER;
+
+typedef struct item {
     char* val;
     KEY* keys;
     UT_hash_handle hh;
@@ -57,12 +63,13 @@ int parse(const char* input_buf, char* output_key, char* output_val) {
 // return: 1 error 0 ok
 int write_item(const char* input_key, const char* input_val) {
     ITEM* p_item = NULL;
-    KEY* p_key = NULL;
+    KEY* p_key   = NULL;
     HASH_FIND_STR(items, input_val, p_item);
 
     if (!p_item) {
         p_item = calloc(1, sizeof(ITEM));
         p_item->val = strdup(input_val);
+        p_item->keys = NULL;
         
         p_key = calloc(1, sizeof(KEY));
         p_key->key = strdup(input_key);
@@ -83,29 +90,43 @@ int write_item(const char* input_key, const char* input_val) {
 
 void summary() {
     unsigned long main_key_count = 0;
-    unsigned long sub_key_count = 0;
-    unsigned long no_hit_sub_key_count = 0;
-
     ITEM *cur, *tmp;
+    KEY *sub_cur, *sub_tmp;
+    SUBKEYCOUNTER *subkey_counter = NULL;
+
     HASH_ITER(hh, items, cur, tmp) {
         KEY* p_k1 = NULL;
         HASH_FIND_STR(cur->keys, main_key, p_k1);
-        if (p_k1) main_key_count++;
+        if (p_k1) {
+            main_key_count++;
+        }
 
-        KEY* p_k2 = NULL;
-        HASH_FIND_STR(cur->keys, sub_key, p_k2);
-        if (p_k2) {
-            if (p_k1)
-                sub_key_count++;
-            else
-                no_hit_sub_key_count++;
+        HASH_ITER(hh, cur->keys, sub_cur, sub_tmp) {
+            if (strcmp(sub_cur->key, main_key) != 0) {
+                SUBKEYCOUNTER* subkey = NULL;
+                HASH_FIND_STR(subkey_counter, sub_cur->key, subkey);
+                if (subkey) {
+                    subkey->count++;
+                } else {
+                    subkey = malloc(sizeof(SUBKEYCOUNTER));
+                    subkey->key = strdup(sub_cur->key);
+                    subkey->count = 1;
+                    HASH_ADD_KEYPTR(hh, subkey_counter, sub_cur->key, strlen(sub_cur->key), subkey);
+
+                }
+            }
         }
     }
+
     system("clear");
-    fprintf(stderr, "mainkey (%s):\n    %ld\n", main_key, main_key_count);
-    fprintf(stderr, "subkey (%s):\n    %ld\n", sub_key, sub_key_count);
-    fprintf(stderr, "no-hit subkey (%s):\n    %ld\n", sub_key, no_hit_sub_key_count);
-    fprintf(stderr, "hit rate:\n    %.2f%%\n", main_key_count == 0 ? 0 : ((float)sub_key_count / (float)main_key_count * 100));
+    fprintf(stderr, "mainkey (%s):\t%ld\n\n",       main_key, main_key_count);
+    SUBKEYCOUNTER *cnt_cur, *cnt_tmp;
+    HASH_ITER(hh, subkey_counter, cnt_cur, cnt_tmp) {
+        fprintf(stderr, "subkey (%s):\t%ld\n", cnt_cur->key, cnt_cur->count);
+        HASH_DELETE(hh, subkey_counter, cnt_cur);
+        free(cnt_cur->key);
+    }
+    HASH_CLEAR(hh, subkey_counter);
 }
 
 void write_queue(const char* input_key, const char* input_val) {
@@ -118,7 +139,7 @@ void write_queue(const char* input_key, const char* input_val) {
     pthread_mutex_unlock(&queue_lock);
 }
 
-void* pthread_p1_work(void* p) {
+void* pthread_p_pipeinput_work(void* p) {
     char input_buf[MAX_BUFSIZE] = "",
          output_key[MAX_BUFSIZE]="",
          output_val[MAX_BUFSIZE]="";
@@ -131,7 +152,7 @@ void* pthread_p1_work(void* p) {
     }
     return NULL;
 }
-void* pthread_p2_work(void* p) {
+void* pthread_p_queueprocess_work(void* p) {
     while(1) {
         KEYVAL* old_ptr = NULL;
         pthread_mutex_lock(&queue_lock);
@@ -162,31 +183,30 @@ void* pthread_p2_work(void* p) {
     return NULL;
 }
 
-void* pthread_p3_work(void* p) {
+void* pthread_p_summary_work(void* p) {
     while(1) {
         pthread_mutex_lock(&items_lock);
-        summary();
+            summary();
         pthread_mutex_unlock(&items_lock);
         sleep(1);
     }
 }
 
 int main(int argc, char*argv[]) {
-    if (argc != 3 || !strlen(argv[1]) || !strlen(argv[2])) {
-        fprintf(stderr, "usage: ./view2 MAINKEY SUBKEY\n");
+    if (argc != 2 || !strlen(argv[1])) {
+        fprintf(stderr, "usage: ./hitter MAINKEY\n");
         return 1;
     }
 
     main_key = strdup(argv[1]);
-    sub_key  = strdup(argv[2]);
 
-    pthread_t p1, p2, p3;
-    pthread_create(&p1, NULL, (void*)pthread_p1_work, (void*)NULL);
-    pthread_create(&p2, NULL, (void*)pthread_p2_work, (void*)NULL);
-    pthread_create(&p3, NULL, (void*)pthread_p3_work, (void*)NULL);
+    pthread_t p_pipeinput, p_queueprocess, p_summary;
+    pthread_create(&p_pipeinput,    NULL, (void*)pthread_p_pipeinput_work,    (void*)NULL);
+    pthread_create(&p_queueprocess, NULL, (void*)pthread_p_queueprocess_work, (void*)NULL);
+    pthread_create(&p_summary,      NULL, (void*)pthread_p_summary_work,      (void*)NULL);
 
-    pthread_join(p1, NULL);
-    pthread_join(p2, NULL);
-    pthread_join(p3, NULL);
+    pthread_join(p_pipeinput,    NULL);
+    pthread_join(p_queueprocess, NULL);
+    pthread_join(p_summary,      NULL);
     return 0;
 }

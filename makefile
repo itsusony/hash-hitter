@@ -1,5 +1,5 @@
 main:
-	gcc -Wall -pthread -o bin/hitter hitter.c
+	gcc -Wall -pthread -O2 -o bin/hitter hitter.c
 
 clean:
 	rm -f hitter 
