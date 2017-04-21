@@ -3,7 +3,8 @@
 #include <unistd.h>
 #include <string.h>
 #include <pthread.h>
-#include "uthash.h"
+#include "include/uthash.h"
+#include "include/utarray.h"
 
 #define MAX_BUFSIZE 10240
 
@@ -29,14 +30,20 @@ typedef struct item {
 typedef struct keyval {
     char* key;
     char* val;
-    UT_hash_handle hh;
 } KEYVAL;
+
 
 ITEM* items = NULL;
 pthread_mutex_t items_lock = PTHREAD_MUTEX_INITIALIZER;
 
-KEYVAL* input_queue = NULL;
+UT_array *input_queue = NULL;
+UT_icd kv_icd = {sizeof(KEYVAL), NULL, NULL, NULL};
 pthread_mutex_t queue_lock = PTHREAD_MUTEX_INITIALIZER;
+
+void init_input_queue() {
+    input_queue = NULL;
+    utarray_new(input_queue, &kv_icd);
+}
 
 
 // return 1 error 0 ok
@@ -125,17 +132,18 @@ void summary() {
         fprintf(stderr, "subkey (%s):\t%ld\n", cnt_cur->key, cnt_cur->count);
         HASH_DELETE(hh, subkey_counter, cnt_cur);
         free(cnt_cur->key);
+        free(cnt_cur);
     }
     HASH_CLEAR(hh, subkey_counter);
 }
 
 void write_queue(const char* input_key, const char* input_val) {
-    KEYVAL* p_kv = calloc(1, sizeof(KEYVAL));
-    p_kv->key = strdup(input_key);
-    p_kv->val = strdup(input_val);
+    KEYVAL p_kv;
+    p_kv.key = strdup(input_key);
+    p_kv.val = strdup(input_val);
 
     pthread_mutex_lock(&queue_lock);
-        HASH_ADD_KEYPTR(hh, input_queue, input_key, strlen(input_key), p_kv);
+        utarray_push_back(input_queue, &p_kv);
     pthread_mutex_unlock(&queue_lock);
 }
 
@@ -154,29 +162,29 @@ void* pthread_p_pipeinput_work(void* p) {
 }
 void* pthread_p_queueprocess_work(void* p) {
     while(1) {
-        KEYVAL* old_ptr = NULL;
+        UT_array *old_input_queue = NULL;
         pthread_mutex_lock(&queue_lock);
-            if (HASH_COUNT(input_queue) > 0) {
-                old_ptr = input_queue;
-                input_queue = NULL;
+            if (utarray_len(input_queue) > 0) {
+                old_input_queue = input_queue;
+                init_input_queue();
             }
         pthread_mutex_unlock(&queue_lock);
 
-        if (old_ptr) {
-            KEYVAL *cur, *tmp;
-
-            HASH_ITER(hh, old_ptr, cur, tmp) {
+        if (old_input_queue) {
+            KEYVAL* p = NULL;
+            for(
+                p=(KEYVAL*)utarray_front(old_input_queue);
+                p!=NULL;
+                p=(KEYVAL*)utarray_next(old_input_queue,p)
+            ) {
                 pthread_mutex_lock(&items_lock);
-                write_item(cur->key, cur->val);
+                    write_item(p->key, p->val);
+                    free(p->key);
+                    free(p->val);
                 pthread_mutex_unlock(&items_lock);
-
-                HASH_DELETE(hh, old_ptr, cur);
-                free(cur->key);
-                free(cur->val);
-                free(cur);
             }
-
-            HASH_CLEAR(hh, old_ptr);
+            utarray_clear(old_input_queue);
+            utarray_free(old_input_queue);
         }
         sleep(1);
     }
@@ -199,6 +207,8 @@ int main(int argc, char*argv[]) {
     }
 
     main_key = strdup(argv[1]);
+
+    init_input_queue();
 
     pthread_t p_pipeinput, p_queueprocess, p_summary;
     pthread_create(&p_pipeinput,    NULL, (void*)pthread_p_pipeinput_work,    (void*)NULL);

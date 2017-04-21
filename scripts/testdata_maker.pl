@@ -10,13 +10,15 @@ sub randomRange {
 
 `echo "" > /tmp/app.log` unless $arg;
 
-for (1..100) {
+open my $fp, ">> /tmp/app.log";
+for (1..1000000) {
     my $main_key = "main";
     my $val = $_;
-    my $txt = sprintf "%s:%d", $main_key, $val;
-    `echo $txt >> /tmp/app.log`;
-    print $txt."\n";
+    my $txt = sprintf "%s:%d\n", $main_key, $val;
+    print $fp $txt;
+#    print $txt."\n";
 }
+close $fp;
 for (1..33) {
     my $sub_key = "sub";
     my $val = $_;
