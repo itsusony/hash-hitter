@@ -31,27 +31,23 @@ a log tool for calcuating the hit of hash
    
    `unbuffer -p perl user_register_log.pl >> /tmp/path.log`
    
-2. `tail -f` the log file and pass to `hitter` with pipe
+2. `tail -f` the log file and pass to `hitter` with pipe, and tell which key is a main key.
 
    usage:
    
-   `tail -f LOGFILE | ./hitter MAIN_KEY SUB_KEY`
+   `tail -f LOGFILE | ./hitter MAIN_KEY`
 
    for example:
    
-   `tail -f /tmp/path.log | ./hitter imp clk`
+   `tail -f /tmp/path.log | ./hitter imp`
    
    and it will print out informatioin like these:
    
    ```
-   mainkey (imp):
-      100
-   subkey (clk):
-      30
-   no-hit subkey (clk):
-      0
-   hit rate:
-      30.00%
+   mainkey (imp): 1000000   
+                          
+   subkey (clk):   33        
+   subkey (cnv):   10    
    ```
   
   # how to compile
@@ -59,6 +55,13 @@ a log tool for calcuating the hit of hash
   just make it.
   
   `make`
+  
+  # highlight
+  
+  I use a list queue for receiving the data from pipe, to reduce the latency.
+  Data will be processed in another thread, and printing out the data at third thread.
+  
+  All of the data flow is designed on none-blocking.
   
   # copyright
   
