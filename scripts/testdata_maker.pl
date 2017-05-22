@@ -47,3 +47,12 @@ for (1..10) {
     `echo $txt >> /tmp/app.log`;
     print $txt."\n";
 }
+
+# try to input some keys that don't exist in main keys
+for (1000001..1000010) {
+    my $sub_key = "hoge";
+    my $val = $_;
+    my $txt = sprintf "%s:%d", $sub_key, $val;
+    `echo $txt >> /tmp/app.log`;
+    print $txt."\n";
+}

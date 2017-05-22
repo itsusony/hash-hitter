@@ -74,15 +74,19 @@ int write_item(const char* input_key, const char* input_val) {
     HASH_FIND_STR(items, input_val, p_item);
 
     if (!p_item) {
-        p_item = calloc(1, sizeof(ITEM));
-        p_item->val = strdup(input_val);
-        p_item->keys = NULL;
-        
-        p_key = calloc(1, sizeof(KEY));
-        p_key->key = strdup(input_key);
-        HASH_ADD_KEYPTR(hh, p_item->keys, p_key->key, strlen(p_key->key), p_key);
+        if (strcmp(main_key, input_key) == 0) { // just allow first key register when input_key === main_key
+            p_item = calloc(1, sizeof(ITEM));
+            p_item->val = strdup(input_val);
+            p_item->keys = NULL;
+            
+            p_key = calloc(1, sizeof(KEY));
+            p_key->key = strdup(input_key);
+            HASH_ADD_KEYPTR(hh, p_item->keys, p_key->key, strlen(p_key->key), p_key);
 
-        HASH_ADD_KEYPTR(hh, items, p_item->val, strlen(p_item->val), p_item);
+            HASH_ADD_KEYPTR(hh, items, p_item->val, strlen(p_item->val), p_item);
+        } else {
+            return 1;
+        }
     } else { // exist val
         HASH_FIND_STR(p_item->keys, input_key, p_key);
         if (!p_key) {
